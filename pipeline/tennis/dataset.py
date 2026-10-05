@@ -39,9 +39,11 @@ def build(matches, params=None, power_book="Avg"):
 
     out["rank1"], out["rank2"] = pick("wrank", "lrank")
     out["pts1"], out["pts2"] = pick("wpts", "lpts")
+    out["games1"], out["games2"] = pick("w_games", "l_games")
+    out["sets1"], out["sets2"] = pick("w_sets", "l_sets")
     for book in BOOKS:
         out[f"o1_{book}"], out[f"o2_{book}"] = pick(f"{book}W", f"{book}L")
-    for col in ("tour", "tournament", "round", "retired"):
+    for col in ("tour", "tournament", "round", "retired", "series", "court"):
         if col in m:
             out[col] = m[col]
 

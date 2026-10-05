@@ -102,6 +102,8 @@ def walk_forward(matches, params=None):
     need = {"date", "winner", "loser", "surface", "best_of"}
     if need - set(matches.columns):
         raise ValueError(f"липсват колони: {sorted(need - set(matches.columns))}")
+    if matches["date"].isna().any():       # без това groupby тихо пропуска такива мачове
+        raise ValueError(f"{int(matches['date'].isna().sum())} мача без дата - не могат да се подредят във времето")
     ordered = matches.sort_values("date", kind="stable")
     model = Elo(params)
     rows = {}

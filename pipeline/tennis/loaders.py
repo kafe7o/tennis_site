@@ -1,18 +1,22 @@
-
 """
 Зареждане на историята в стандартния вид (виж dataset.py).
 
-ВНИМАНИЕ: колоните са по документацията и по памет - БЕЗ да са сверени с реални файлове
-(2026-10-05 мрежата на средата не пуска tennis-data.co.uk). Затова зареждането е строго:
-липсваща задължителна колона, непозната настилка или непознат кръг СПИРАТ с грешка, а не се
-пълнят тихо. При първия реален файл това е първото нещо за сверяване.
+tennis_data() е сверено с 30 реални файла (мъже и жени, 2012-2026, xls и xlsx) на 2026-10-05.
+sackmann() НЕ е сверено - репозиториите на Sackmann не са достъпни за средата. Зареждането е
+строго: липсваща задължителна колона, непозната настилка или непознат кръг СПИРАТ с грешка, а не
+се пълнят тихо. Единственото изключение е мач без дата (такъв има в източника: финалът на
+Cincinnati 2012 при жените): не може да се постави във времето, затова се пропуска с ВИДИМО
+предупреждение.
 
   tennis_data()  tennis-data.co.uk: xls/xlsx/csv по година и по тур. Има коефициенти (B365, PS,
-                 Max, Avg), точна дата на мача, ранг и точки. Годен за проверката срещу пазара.
+                 Max, Avg), точна дата на мача, ранг и точки, ниво на турнира, закрит/открит
+                 корт, геймове и сетове. Годен за проверката срещу пазара.
   sackmann()     JeffSackmann/tennis_atp и tennis_wta (atp_matches_YYYY.csv): пълни имена,
                  ранг, статистика по точки. НЯМА коефициенти; датата е на началото на турнира,
                  затова към нея се добавят дни по кръга, за да остане редът вътре в турнира.
 """
+
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -43,7 +47,9 @@ def _surface(series, where):
 def tennis_data(path, tour):
     """tour: 'ATP' или 'WTA'. path: .xls / .xlsx / .csv"""
     path = str(path)
-    df = pd.read_csv(path) if path.lower().endswith(".csv") else pd.read_excel(path)
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="Unknown extension is not supported")   # безвредно, от openpyxl
+        df = pd.read_csv(path) if path.lower().endswith(".csv") else pd.read_excel(path)
     missing = [c for c in TD_REQUIRED if c not in df.columns]
     if missing:
         raise ValueError(f"{path}: липсват колони {missing}")
@@ -52,18 +58,30 @@ def tennis_data(path, tour):
     date = df["Date"] if pd.api.types.is_datetime64_any_dtype(df["Date"]) \
         else pd.to_datetime(df["Date"], dayfirst=True, errors="raise")
     best_of = _num(_col(df, "Best of")).fillna(3).astype(int)
+    series = _col(df, "Series") if "Series" in df.columns else _col(df, "Tier")
+    # геймовете по сетове; липсващ сет (мач на 2 сета) се пропуска, но мач без нито един сет остава NaN
+    w_games = pd.concat([_num(_col(df, f"W{i}")) for i in range(1, 6)], axis=1).sum(axis=1, min_count=1)
+    l_games = pd.concat([_num(_col(df, f"L{i}")) for i in range(1, 6)], axis=1).sum(axis=1, min_count=1)
     out = pd.DataFrame({
         "date": date, "tour": tour, "tournament": _col(df, "Tournament"), "round": df["Round"],
+        "series": series, "court": _col(df, "Court"),
         "surface": _surface(df["Surface"], path), "best_of": best_of,
         "winner": df["Winner"].astype(str).str.strip(), "loser": df["Loser"].astype(str).str.strip(),
         "wrank": _num(_col(df, "WRank")), "lrank": _num(_col(df, "LRank")),
         "wpts": _num(_col(df, "WPts")), "lpts": _num(_col(df, "LPts")),
+        "w_games": w_games, "l_games": l_games,
+        "w_sets": _num(_col(df, "Wsets")), "l_sets": _num(_col(df, "Lsets")),
         "walkover": comment.str.contains("walkover") | comment.str.contains("w/o"),
         "retired": comment.str.contains("retired"),
     })
     for book in TD_BOOKS:
         out[f"{book}W"] = _num(_col(df, f"{book}W"))
         out[f"{book}L"] = _num(_col(df, f"{book}L"))
+    undated = out["date"].isna()
+    if undated.any():
+        who = "; ".join(f"{r.winner} - {r.loser} ({r.tournament})" for r in out[undated].head(3).itertuples())
+        warnings.warn(f"{path}: {int(undated.sum())} мача без дата са пропуснати: {who}", stacklevel=2)
+        out = out[~undated].reset_index(drop=True)
     return out
 
 
