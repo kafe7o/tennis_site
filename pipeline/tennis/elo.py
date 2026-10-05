@@ -18,6 +18,7 @@ Elo за тенис: обща оценка + оценка по настилка,
 import math
 from dataclasses import dataclass
 
+import numpy as np
 import pandas as pd
 
 BASE = 1500.0
@@ -35,6 +36,9 @@ class EloParams:
     k_shape: float = 0.4
     surface_weight: float = 0.5
     bo5_boost: float = 1.0
+    # „xG“ на тениса: освен кой е победил, и с каква преднина (дял спечелени геймове). 0 = само победа/загуба.
+    # Победителят получава резултат (1-w) + w*дял, не по-малко от 0.5; при отказване - винаги 1.
+    margin_weight: float = 0.75       # избрано по 2015-2021, потвърдено на 2022-2026 (research/elo_margin.py)
 
 
 class Elo:
@@ -71,7 +75,8 @@ class Elo:
         p = self.params
         return p.k_delta / (matches + p.k_offset) ** p.k_shape
 
-    def update(self, winner, loser, surface):
+    def update(self, winner, loser, surface, score=1.0):
+        """score: резултатът на победителя в [0.5, 1] (1 = чиста победа); загубилият получава 1 - score."""
         exp = _prob(self.rating(winner) - self.rating(loser))
         kw, kl = self._k(self.seen(winner)), self._k(self.seen(loser))
         # оценката по настилка тръгва от общата ПРЕДИ този мач
@@ -79,19 +84,30 @@ class Elo:
         exp_s = _prob(sw - sl)
         ksw, ksl = self._k(self.ns.get((winner, surface), 0)), self._k(self.ns.get((loser, surface), 0))
 
-        self.overall[winner] = self.rating(winner) + kw * (1.0 - exp)
-        self.overall[loser] = self.rating(loser) - kl * (1.0 - exp)
-        self.surf[(winner, surface)] = sw + ksw * (1.0 - exp_s)
-        self.surf[(loser, surface)] = sl - ksl * (1.0 - exp_s)
+        self.overall[winner] = self.rating(winner) + kw * (score - exp)
+        self.overall[loser] = self.rating(loser) - kl * (score - exp)
+        self.surf[(winner, surface)] = sw + ksw * (score - exp_s)
+        self.surf[(loser, surface)] = sl - ksl * (score - exp_s)
         self.n[winner] = self.seen(winner) + 1
         self.n[loser] = self.seen(loser) + 1
         self.ns[(winner, surface)] = self.ns.get((winner, surface), 0) + 1
         self.ns[(loser, surface)] = self.ns.get((loser, surface), 0) + 1
 
 
+def _score(m, weight):
+    """Резултатът на победителя за обновяването: 1, или смес с дела спечелени геймове (виж margin_weight)."""
+    if weight <= 0:
+        return 1.0
+    wg, lg = getattr(m, "w_games", np.nan), getattr(m, "l_games", np.nan)
+    if getattr(m, "retired", False) or not (wg == wg and lg == lg) or wg + lg <= 0:
+        return 1.0                            # отказване или липсващи геймове: чиста победа
+    return min(1.0, max(0.5, (1.0 - weight) + weight * wg / (wg + lg)))
+
+
 def walk_forward(matches, params=None):
     """
     matches: DataFrame с колони date, winner, loser, surface, best_of (всеки ред е изигран мач).
+    По желание w_games, l_games, retired - за EloParams.margin_weight > 0.
 
     За всеки ден СНАЧАЛА се прогнозират всички мачове, после се обновяват оценките.
     Играч 1 е първият по азбучен ред - не победителят, иначе етикетът би издавал отговора.
@@ -116,7 +132,7 @@ def walk_forward(matches, params=None):
                              model.surface_rating(a, m.surface) - model.surface_rating(b, m.surface),
                              model.seen(a), model.seen(b))
         for m in day.itertuples():
-            model.update(m.winner, m.loser, m.surface)
+            model.update(m.winner, m.loser, m.surface, _score(m, model.params.margin_weight))
     out = pd.DataFrame.from_dict(rows, orient="index",
                                  columns=["p1", "p2", "y", "elo_p1", "elo_diff", "surf_diff", "n1", "n2"])
     return out.loc[matches.index]

@@ -68,3 +68,15 @@ def test_efficient_market_the_masters_rules_lose_the_margin():
     assert ev["всички"]["n"] > 3000 and ev["всички"]["roi"] < 0     # няма предимство - губи около маржа
     cols = rules.evaluate_columns(t)
     assert cols["columns"] > 50 and cols["return"] < 1.0            # маржът се умножава на всеки мач
+
+
+def test_exclude_odds_band_removes_the_toto_tips():
+    df = frame(model=[0.80, 0.80, 0.80], o1_Avg=[1.45, 1.70, 1.50], o2_Avg=[2.9, 2.2, 2.7], y=[1, 1, 1])
+    t = rules.tips(df, "model", "Avg", exclude_odds=(1.30, 1.55))
+    assert t.index.tolist() == [1]            # 1.45 и 1.50 са в лентата на „тото“ и отпадат
+
+
+def test_agree_col_keeps_only_tips_where_model_and_market_pick_the_same_player():
+    df = frame(model=[0.70, 0.70, 0.30], mkt=[0.60, 0.40, 0.45], o1_Avg=[1.6, 2.2, 2.4], o2_Avg=[2.4, 1.7, 1.6])
+    t = rules.tips(df, "model", "Avg", agree_col="mkt")
+    assert t.index.tolist() == [0, 2]         # реда 1: моделът за p1, пазарът за p2 - несъгласие

@@ -46,14 +46,18 @@ def unpredictable(n1, n2, min_seen=10):
     return min(n1, n2) < min_seen
 
 
-def tips(df, p_col, book, min_prob=MIN_PROB, min_odds=MIN_ODDS, min_seen=10):
+def tips(df, p_col, book, min_prob=MIN_PROB, min_odds=MIN_ODDS, min_seen=10, exclude_odds=None, agree_col=None):
     """
     Главният съвет за всеки мач по модела p_col (вероятност p1 да победи; НЕ пазарът!).
+    exclude_odds=(lo, hi): без съвет, когато коефициентът му е в тази лента („тото“ - нисък коефициент, който
+    не излиза). agree_col: колона с вероятност (пазарът); съвет само когато и тя е за същия играч.
     Връща: date, tournament, side (1 или 2), p, odds, kind, won, profit.
     """
     o1c, o2c = f"o1_{book}", f"o2_{book}"
     d = df.loc[df[p_col].notna() & df[o1c].notna() & df[o2c].notna()]
     d = d.loc[~((d[["n1", "n2"]].min(axis=1)) < min_seen)]
+    if agree_col is not None:
+        d = d.loc[d[agree_col].notna() & ((d[p_col] >= 0.5) == (d[agree_col] >= 0.5))]
     first = d[p_col].to_numpy() >= 0.5
     p = np.where(first, d[p_col].to_numpy(), 1.0 - d[p_col].to_numpy())
     odds = np.where(first, d[o1c].to_numpy(), d[o2c].to_numpy())
@@ -62,7 +66,10 @@ def tips(df, p_col, book, min_prob=MIN_PROB, min_odds=MIN_ODDS, min_seen=10):
                         "won": won, "profit": np.where(won, odds - 1.0, -1.0)}, index=d.index)
     out["tournament"] = d["tournament"].to_numpy() if "tournament" in d else "?"
     out["kind"] = [kind(o) for o in odds]
-    return out[(out["p"] >= min_prob) & (out["odds"] >= min_odds)]
+    keep = (out["p"] >= min_prob) & (out["odds"] >= min_odds)
+    if exclude_odds is not None:
+        keep &= ~out["odds"].between(*exclude_odds)
+    return out[keep]
 
 
 def evaluate_tips(t):
