@@ -2,8 +2,10 @@
 Един вход за всичко.
 
     python run.py selftest                       проверка на системата върху СИМУЛИРАН свят (без данни)
-    python run.py backtest --data DIR            проверката назад върху реални мачове и коефициенти
-                                                 DIR/atp и DIR/wta със файловете от tennis-data.co.uk
+    python run.py backtest --data DIR [--tour man|woman]
+                                                 проверката назад върху реални мачове и коефициенти;
+                                                 DIR/man (ATP) и DIR/woman (WTA) със файловете от tennis-data.co.uk,
+                                                 всеки тур се пуска отделно
 
 Първо се пуска selftest: ако системата не различава "няма предимство" от "има предимство" в свят, в
 който истината се знае, резултатът от backtest не значи нищо.
@@ -18,6 +20,7 @@ import pandas as pd
 from tennis import backtest, dataset, loaders, rules, simulate, stack
 
 BOOKS_SHOWN = ("Avg", "Max", "PS")
+TOURS = {"man": "ATP", "woman": "WTA"}        # папката в data/ -> тур
 
 
 def fmt(d):
@@ -64,14 +67,12 @@ def cmd_selftest(_):
 
 
 def cmd_backtest(args):
-    root = Path(args.data)
-    frames = []
-    for tour in ("atp", "wta"):
-        for path in sorted((root / tour).glob("*")) if (root / tour).exists() else []:
-            if path.suffix.lower() in (".xls", ".xlsx", ".csv"):
-                frames.append(loaders.tennis_data(path, tour.upper()))
+    folder = Path(args.data) / args.tour
+    frames = [loaders.tennis_data(path, TOURS[args.tour]) for path in sorted(folder.glob("*"))
+              if path.suffix.lower() in (".xls", ".xlsx", ".csv")]
     if not frames:
-        raise SystemExit(f"Няма файлове в {root}/atp и {root}/wta (tennis-data.co.uk: .xls/.xlsx/.csv)")
+        raise SystemExit(f"Няма файлове в {folder} (tennis-data.co.uk: .xls/.xlsx/.csv)")
+    # мъжете и жените са отделни светове: никога не играят един срещу друг, затова модел за всеки
     matches = pd.concat(frames, ignore_index=True)
     print(f"Заредени {len(matches)} мача, {matches['date'].min().date()} - {matches['date'].max().date()}")
     df = dataset.build(matches)
@@ -86,6 +87,7 @@ def main():
     sub.add_parser("selftest").set_defaults(fn=cmd_selftest)
     bt = sub.add_parser("backtest")
     bt.add_argument("--data", required=True)
+    bt.add_argument("--tour", default="man", choices=tuple(TOURS), help="man (ATP) или woman (WTA) - отделно")
     bt.add_argument("--first-year", default=None)
     bt.add_argument("--select-until", default=None)
     bt.add_argument("--book", default="Avg", choices=("Avg", "Max", "PS", "B365"))
