@@ -54,8 +54,10 @@ def world(n_players=250, years=8, per_year=4000, seed=0, market_sees="all",
         lose = np.where(a_wins, b, a)
         win_odds = lambda oa, ob: np.where(a_wins, oa, ob)
         lose_odds = lambda oa, ob: np.where(a_wins, ob, oa)
+        week = days.isocalendar().week.to_numpy()
         rows.append(pd.DataFrame({
             "date": days, "winner": names[win], "loser": names[lose],
+            "tournament": [f"{year}-W{w:02d}-{SURFACES[i]}" for w, i in zip(week, s)],
             "surface": np.array(SURFACES)[s], "best_of": np.where(bo5, 5, 3),
             "wrank": rank[win], "lrank": rank[lose], "wpts": pts[win], "lpts": pts[lose],
             "AvgW": win_odds(avg_a, avg_b), "AvgL": lose_odds(avg_a, avg_b),

@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from tennis import backtest, dataset, loaders, simulate, stack
+from tennis import backtest, dataset, loaders, rules, simulate, stack
 
 BOOKS_SHOWN = ("Avg", "Max", "PS")
 
@@ -44,6 +44,13 @@ def report(df, first_year, select_until, book):
             continue
         print(f"   {col}: правило {r['chosen']}\n      избор: {fmt(r['select'])}\n      тест : {fmt(r['test'])}")
         print(f"      (опитани комбинации: {len(r['grid'])} - най-добрата в избора често е късмет)")
+    print(f"\n4. Логиката на майстора (цени: {book}) - съветът е по СОБСТВЕНИЯ модел (stack_nomkt), без пазара")
+    tips = rules.tips(test, "stack_nomkt", book)
+    for name, s in rules.evaluate_tips(tips).items():
+        print(f"   {name:18s} {fmt(s)}")
+    print(f"   колонки от {rules.COLUMN_SIZE} (шанс >= {rules.COLUMN_MIN_P:.0%}, един мач на турнир): "
+          f"{fmt(rules.evaluate_columns(tips))}")
+    print("   (прагове 1.40 / 1.80 / 65% / 3 мача са от футбола - тук се мерят наново)")
     return test
 
 
